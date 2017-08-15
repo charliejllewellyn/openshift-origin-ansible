@@ -1,0 +1,4 @@
+---
+- hosts: origin_hosts
+  roles: 
+    - origin

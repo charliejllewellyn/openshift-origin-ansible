@@ -1,0 +1,59 @@
+- name: install packages
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - docker
+    - bind-utils
+  become: yes
+- name: start docker
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+- name: Add docker group to centos user
+  user: 
+    name: centos
+    groups: docker
+    append: yes
+  become: yes
+- name: Add kernal params for docker
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    reload: yes
+  become: yes
+- name: Add insecure registry
+  replace:
+    path: /etc/sysconfig/docker
+    regexp: '.*INSECURE_REGISTRY=.*'
+    replace: "INSECURE_REGISTRY='--insecure-registry 172.30.0.0/16'"
+    backup: yes
+  become: yes
+  register: update_reg
+- name: restart docker
+  systemd:
+    name: docker
+    state: restart
+  when: update_reg.changed
+- name: determine public IP
+  command: dig +short myip.opendns.com @resolver1.opendns.com
+  register: public_ip
+- name: Download oc CLI
+  get_url:
+    url: https://github.com/openshift/origin/releases/download/v3.6.0/openshift-origin-client-tools-v3.6.0-c4dd4cf-linux-64bit.tar.gz
+    dest: /home/centos/openshift-origin-client-tools-v3.6.0-c4dd4cf-linux-64bit.tar.gz
+- name: Extract oc CLI
+  unarchive:
+    src: /home/centos/openshift-origin-client-tools-v3.6.0-c4dd4cf-linux-64bit.tar.gz
+    dest: ~/
+- name: set oc CLI permissions
+  copy:
+    src: ~/openshift-origin-client-tools-v3.6.0-c4dd4cf-linux-64bit/oc
+    dest: /usr/bin/oc
+    mode: 0755
+  become: yes
+- name: deploy openshift
+  command: oc cluster up --public-hostname="{{ public_ip.stdout }}" --routing-suffix="{{ public_ip.stdout }}.nip.io" --metrics --service-catalog
+  become: yes
